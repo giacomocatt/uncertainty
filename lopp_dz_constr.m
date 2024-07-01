@@ -8,26 +8,32 @@ clear
 dim           = [10,10];
 deg           = 1;
 n_shocks      = 5;
-dynare dz_constr;
-[grid, fspace, shocks, prob,N, bounds] = initialize_dz(dim, deg, n_shocks, M_, oo_);
+dynare dz;
+[grid, fspace, shocks, prob,N, bounds, pars] = initialize_dz(dim, deg, n_shocks, M_, oo_);
 inve = 0; %0 = convex cost , 1 = concave prod func
 
-load('coeffs_dz_lin_inv.mat')
-coeffs = coeffs_dz_.coeffs_03;
+load('coeffs_dz_rightreturn.mat')
+coeffs = coeffs_dz_.coeffs_381_02;
 policy       = funeval(coeffs(:,1), fspace, grid);
 policy(N+1:2*N)   = funeval(coeffs(:,2), fspace, grid);
-policy(2*N+1:3*N)   = funeval(coeffs(:,3), fspace, grid);%beta*(1-sigma)/(1-beta*sigma)*ones(N,1);
-unc = 0.01;
-M_.params(end) = unc;
-%for jj =1:10
-theta_mean = 0.0325;
-M_.params(end-1) = theta_mean;
-%M_.params(2) = 1;
+policy(2*N+1:3*N)   = funeval(coeffs(:,3), fspace, grid);beta*(1-sigma)/(1-beta*sigma)*ones(N,1);
+%nu = 0.001*shocks;
+theta_mean = 0.381;
+pars(end-1) = theta_mean;
+t = 1:1:12;
+rho_unc = 0.7;
+unc = rho_unc.^t*(0.1-0.01) + 0.01;
+pars(end) = unc;
+store = zeros(3*N, 5);
+for jj = 1:12
+    pars(end) = unc(jj);
+    %for jj =1:10
+    %M_.params(2) = 1;
 tol         = 1e-5;
 maxiter     = 1e5;
-obj         = @(pol_next)EE_dz(pol_next,policy, grid, fspace, M_, shocks, prob, inve);
+obj         = @(pol_next)EE_dz(pol_next,policy, grid, fspace, pars, shocks, prob, inve);
 policy_next = knitro_nlneqs(obj, policy(1:N));
-policy_next(N+1:3*N) = R_psi_dz(policy, policy_next,grid,fspace, M_, shocks, prob, inve);
+policy_next(N+1:3*N) = R_psi_dz(policy, policy_next,grid,fspace, pars, shocks, prob, inve);
 res             = log(policy_next./policy);
 resdiff        = policy_next - policy;
 lambda = 0.1;
@@ -35,22 +41,26 @@ policy      = lambda*policy_next+(1-lambda)*policy;
 ii = 1;
 norms = [norm(res, inf)];
 while norm(res, inf) > tol && ii < maxiter %&& min(policy(N+1:2*N))>0.75 && min(policy(1:N))>0.1
-    obj         = @(pol_next)EE_dz(pol_next,policy, grid, fspace, M_, shocks, prob, inve);
+    obj         = @(pol_next)EE_dz(pol_next,policy, grid, fspace, pars, shocks, prob, inve);
     policy_next = knitro_nlneqs(obj, policy(1:N));
-    policy_next(N+1:3*N) = R_psi_dz(policy, policy_next,grid,fspace, M_, shocks, prob, inve);
+    policy_next(N+1:3*N) = R_psi_dz(policy, policy_next,grid,fspace, pars, shocks, prob, inve);
     res             = log(policy_next./policy);
     policy      = lambda*policy_next + (1-lambda)*policy;
     ii              = ii + 1;
     norms(ii+1,:)   = [norm(res,inf)];
-    norm(res,inf), M_.params(end-1)
+    norm(res,inf), pars(end-1)
 end
-store = policy;
+    store(:,jj) = policy;
 end
-policy = store;
-coeffs_dz_.coeffs_03 = [funfitxy(fspace,grid, policy(1:N)), funfitxy(fspace,grid, policy(N+1:2*N)), ...
+policy = store(:,5);
+coeffs_dz_.coeffs_381_09 = [funfitxy(fspace,grid, policy(1:N)), funfitxy(fspace,grid, policy(N+1:2*N)), ...
     funfitxy(fspace,grid, policy(2*N+1:3*N))];
-save('coeffs_dz_convex_inv.mat', 'coeffs_dz_')
+save('coeffs_dz_rightreturn.mat', 'coeffs_dz_')
 
-dim2 = [20,10];
-[grid1, fspace1, Phi] = Grid_spli(dim2,bounds,deg);
-pol_func = policy_functions_dz(coeffs, grid, M_, fspace,fspace, shocks, prob, inve);
+%dim2 = [50,50];
+%bounds1 = [1.244,1.248;-1.96*0.01/(1-0.95^2)^(1/2),-1.6*0.01/(1-0.95^2)^(1/2)];
+%[grid1, fspace1, Phi] = Grid_spli(dim2,bounds1,deg);
+coeffs = coeffs_dz_.coeffs_381_01;
+pol_func = policy_functions_dz(coeffs, grid, pars, fspace,fspace, shocks, prob, inve);
+avg_premium = mean(pol_func.premium);
+avg_gdp = mean(pol_func.y);
